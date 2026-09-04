@@ -310,6 +310,37 @@ func (c *Client) Disconnect() error {
 	return nil
 }
 
+// Reconnect drops the current connection so the reconnect loop opens a fresh
+// one. Start keeps running.
+//
+// 🔑 Use it when something outside this package decides the connection is no
+//
+//	longer useful. The built-in watchdogs only see the transport: they catch a
+//	socket that stopped carrying frames, but not one that carries frames while
+//	the events you expect never arrive. An end-to-end check — post a marker,
+//	wait for it to come back over the socket — catches that, and this is how it
+//	acts on the answer.
+//
+// Returns false if there was no connection to drop.
+func (c *Client) Reconnect() bool {
+	c.mu.RLock()
+	conn := c.current
+	c.mu.RUnlock()
+	if conn == nil {
+		return false
+	}
+	c.log.Infof("reconnecting on request")
+	conn.close()
+	return true
+}
+
+// Connected reports whether a connection is currently open.
+func (c *Client) Connected() bool {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	return c.current != nil
+}
+
 // Ack acknowledges an envelope by id. Event.Ack is usually more convenient.
 func (c *Client) Ack(envelopeID string, payload any) error {
 	c.mu.RLock()

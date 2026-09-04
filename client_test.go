@@ -524,3 +524,52 @@ func errorsAs(err error, target **Error) bool {
 	}
 	return false
 }
+
+// ── forced reconnect ────────────────────────────────────────────────────
+//
+// 🔑 The watchdogs only see the transport. A socket can stay healthy while the
+//
+//	events you expect never arrive, and only an end-to-end check notices that.
+//	Reconnect is how a caller acts on such a check.
+
+func TestReconnectOpensAFreshConnection(t *testing.T) {
+	f := newFakeSlack(t)
+	c := f.client(t, nil)
+
+	connected := make(chan struct{}, 4)
+	c.On(EventConnected, func(Event) {
+		select {
+		case connected <- struct{}{}:
+		default:
+		}
+	})
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	go c.Start(ctx)
+
+	select {
+	case <-connected:
+	case <-time.After(3 * time.Second):
+		t.Fatal("never connected")
+	}
+	if !c.Connected() {
+		t.Error("Connected reported false while connected")
+	}
+
+	if !c.Reconnect() {
+		t.Fatal("Reconnect reported no connection to drop")
+	}
+	waitFor(t, "a second connection", func() bool { return f.connCount() >= 2 })
+}
+
+func TestReconnectWithNoConnection(t *testing.T) {
+	f := newFakeSlack(t)
+	c := f.client(t, nil)
+	if c.Reconnect() {
+		t.Error("Reconnect reported success with no connection open")
+	}
+	if c.Connected() {
+		t.Error("Connected reported true before starting")
+	}
+}

@@ -86,6 +86,7 @@ client.Start(ctx) // blocks
 | `autoReconnectEnabled: false` | `AutoReconnect: &falseValue` |
 | *(no equivalent)* | `MaxReconnectDelay` — see below |
 | *(no equivalent)* | `client.Events()` — receive on a channel instead |
+| *(no equivalent)* | `client.Reconnect()` — drop the connection on your own signal |
 
 **One envelope arrives up to three times**, exactly as in Node: under its inner
 Slack event type, under its envelope type, and under `slack_event`. Register at
@@ -139,6 +140,24 @@ A handler that panics on an unexpected payload would otherwise kill the process,
 the supervisor would restart it, and the same event would arrive again. That
 loop looks like a silent outage from outside. Panics are caught, logged, and the
 client keeps reading.
+
+### Reconnect on your own signal
+
+The watchdogs only see the transport. A socket can stay perfectly healthy while
+the events you expect never arrive — a subscription that lapsed, a workspace
+that revoked a scope, a Slack-side problem that shows up as silence.
+
+An end-to-end check catches that: post a marker into a channel you own, wait for
+it to come back over the socket, and if it does not, the receive path is broken
+regardless of what the transport thinks.
+
+```go
+if !sawMarkerComeBack() {
+    client.Reconnect() // drops the connection; the loop opens a fresh one
+}
+```
+
+`Start` keeps running throughout. `client.Connected()` reports the current state.
 
 ### A channel, if you prefer one
 
